@@ -443,6 +443,10 @@ void MapPort(bool fUseUPnP);
 unsigned short GetListenPort();
 bool BindListenPort(const CService &bindAddr, std::string& strError, bool fWhitelisted = false);
 
+void StartTor();
+void InterruptTor();
+void StopTor();
+
 struct CombinerAll
 {
     typedef bool result_type;

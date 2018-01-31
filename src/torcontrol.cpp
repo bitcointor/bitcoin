@@ -28,7 +28,7 @@
 #include <event2/thread.h>
 
 /** Default control port */
-const std::string DEFAULT_TOR_CONTROL = "127.0.0.1:9051";
+const std::string DEFAULT_TOR_CONTROL = "127.0.0.1:9978";
 /** Tor cookie size (from control-spec.txt) */
 static const int TOR_COOKIE_SIZE = 32;
 /** Size of client/server nonce for SAFECOOKIE */
@@ -525,12 +525,10 @@ void TorController::auth_cb(TorControlConnection& _conn, const TorControlReply& 
 
         // Now that we know Tor is running setup the proxy for onion addresses
         // if -onion isn't set to something else.
-        if (gArgs.GetArg("-onion", "") == "") {
-            CService resolved(LookupNumeric("127.0.0.1", 9050));
-            proxyType addrOnion = proxyType(resolved, true);
-            SetProxy(NET_TOR, addrOnion);
-            SetLimited(NET_TOR, false);
-        }
+        CService resolved(LookupNumeric("127.0.0.1", 9979));
+        proxyType addrOnion = proxyType(resolved, true);
+        SetProxy(NET_TOR, addrOnion);
+        SetLimited(NET_TOR, false);
 
         // Finally - now create the service
         if (private_key.empty()) // No private key, generate one

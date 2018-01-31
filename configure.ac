@@ -14,6 +14,11 @@ AC_CONFIG_HEADERS([src/config/bitcoin-config.h])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_MACRO_DIR([build-aux/m4])
 
+AX_SUBDIRS_CONFIGURE([tor], [[--disable-unittests],
+                             [--disable-system-torrc],
+                             [--disable-systemd],
+                             [--disable-asciidoc]])
+
 BITCOIN_DAEMON_NAME=bitcoind
 BITCOIN_GUI_NAME=bitcoin-qt
 BITCOIN_CLI_NAME=bitcoin-cli
@@ -904,6 +909,10 @@ if test x$use_pkgconfig = xyes; then
   m4_ifdef(
     [PKG_CHECK_MODULES],
     [
+      PKG_CHECK_MODULES([ZLIB], [zlib],,)
+      PKG_CHECK_MODULES([ZSTD], [libzstd],,)
+      PKG_CHECK_MODULES([LZMA], [liblzma],,)
+
       PKG_CHECK_MODULES([SSL], [libssl],, [AC_MSG_ERROR(openssl  not found.)])
       PKG_CHECK_MODULES([CRYPTO], [libcrypto],,[AC_MSG_ERROR(libcrypto  not found.)])
       BITCOIN_QT_CHECK([PKG_CHECK_MODULES([PROTOBUF], [protobuf], [have_protobuf=yes], [BITCOIN_QT_FAIL(libprotobuf not found)])])
@@ -934,6 +943,10 @@ else
 
   AC_CHECK_HEADER([openssl/ssl.h],, AC_MSG_ERROR(libssl headers missing),)
   AC_CHECK_LIB([ssl],         [main],SSL_LIBS=-lssl, AC_MSG_ERROR(libssl missing))
+
+  AC_CHECK_LIB([z], [main], ZLIB_LIBS=-lz,)
+  AC_CHECK_LIB([zstd], [main], ZSTD_LIBS=-lzstd,)
+  AC_CHECK_LIB([lzma], [main], LZMA_LIBS=-llzma,)
 
   if test x$build_bitcoin_utils$build_bitcoind$bitcoin_enable_qt$use_tests != xnononono; then
     AC_CHECK_HEADER([event2/event.h],, AC_MSG_ERROR(libevent headers missing),)

@@ -163,6 +163,7 @@ void Interrupt(boost::thread_group& threadGroup)
     InterruptRPC();
     InterruptREST();
     InterruptTorControl();
+    InterruptTor();
     if (g_connman)
         g_connman->Interrupt();
     threadGroup.interrupt_all();
@@ -202,6 +203,7 @@ void Shutdown()
     g_connman.reset();
 
     StopTorControl();
+    //StopTor();
     if (fDumpMempoolLater && gArgs.GetArg("-persistmempool", DEFAULT_PERSIST_MEMPOOL)) {
         DumpMempool();
     }
@@ -391,35 +393,19 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += HelpMessageOpt("-bantime=<n>", strprintf(_("Number of seconds to keep misbehaving peers from reconnecting (default: %u)"), DEFAULT_MISBEHAVING_BANTIME));
     strUsage += HelpMessageOpt("-bind=<addr>", _("Bind to given address and always listen on it. Use [host]:port notation for IPv6"));
     strUsage += HelpMessageOpt("-connect=<ip>", _("Connect only to the specified node(s); -connect=0 disables automatic connections"));
-    strUsage += HelpMessageOpt("-discover", _("Discover own IP addresses (default: 1 when listening and no -externalip or -proxy)"));
     strUsage += HelpMessageOpt("-dns", _("Allow DNS lookups for -addnode, -seednode and -connect") + " " + strprintf(_("(default: %u)"), DEFAULT_NAME_LOOKUP));
     strUsage += HelpMessageOpt("-dnsseed", _("Query for peer addresses via DNS lookup, if low on addresses (default: 1 unless -connect used)"));
     strUsage += HelpMessageOpt("-externalip=<ip>", _("Specify your own public address"));
     strUsage += HelpMessageOpt("-forcednsseed", strprintf(_("Always query for peer addresses via DNS lookup (default: %u)"), DEFAULT_FORCEDNSSEED));
-    strUsage += HelpMessageOpt("-listen", _("Accept connections from outside (default: 1 if no -proxy or -connect)"));
-    strUsage += HelpMessageOpt("-listenonion", strprintf(_("Automatically create Tor hidden service (default: %d)"), DEFAULT_LISTEN_ONION));
     strUsage += HelpMessageOpt("-maxconnections=<n>", strprintf(_("Maintain at most <n> connections to peers (default: %u)"), DEFAULT_MAX_PEER_CONNECTIONS));
     strUsage += HelpMessageOpt("-maxreceivebuffer=<n>", strprintf(_("Maximum per-connection receive buffer, <n>*1000 bytes (default: %u)"), DEFAULT_MAXRECEIVEBUFFER));
     strUsage += HelpMessageOpt("-maxsendbuffer=<n>", strprintf(_("Maximum per-connection send buffer, <n>*1000 bytes (default: %u)"), DEFAULT_MAXSENDBUFFER));
     strUsage += HelpMessageOpt("-maxtimeadjustment", strprintf(_("Maximum allowed median peer time offset adjustment. Local perspective of time may be influenced by peers forward or backward by this amount. (default: %u seconds)"), DEFAULT_MAX_TIME_ADJUSTMENT));
-    strUsage += HelpMessageOpt("-onion=<ip:port>", strprintf(_("Use separate SOCKS5 proxy to reach peers via Tor hidden services (default: %s)"), "-proxy"));
-    strUsage += HelpMessageOpt("-onlynet=<net>", _("Only connect to nodes in network <net> (ipv4, ipv6 or onion)"));
     strUsage += HelpMessageOpt("-permitbaremultisig", strprintf(_("Relay non-P2SH multisig (default: %u)"), DEFAULT_PERMIT_BAREMULTISIG));
     strUsage += HelpMessageOpt("-peerbloomfilters", strprintf(_("Support filtering of blocks and transaction with bloom filters (default: %u)"), DEFAULT_PEERBLOOMFILTERS));
     strUsage += HelpMessageOpt("-port=<port>", strprintf(_("Listen for connections on <port> (default: %u or testnet: %u)"), defaultChainParams->GetDefaultPort(), testnetChainParams->GetDefaultPort()));
-    strUsage += HelpMessageOpt("-proxy=<ip:port>", _("Connect through SOCKS5 proxy"));
-    strUsage += HelpMessageOpt("-proxyrandomize", strprintf(_("Randomize credentials for every proxy connection. This enables Tor stream isolation (default: %u)"), DEFAULT_PROXYRANDOMIZE));
     strUsage += HelpMessageOpt("-seednode=<ip>", _("Connect to a node to retrieve peer addresses, and disconnect"));
     strUsage += HelpMessageOpt("-timeout=<n>", strprintf(_("Specify connection timeout in milliseconds (minimum: 1, default: %d)"), DEFAULT_CONNECT_TIMEOUT));
-    strUsage += HelpMessageOpt("-torcontrol=<ip>:<port>", strprintf(_("Tor control port to use if onion listening enabled (default: %s)"), DEFAULT_TOR_CONTROL));
-    strUsage += HelpMessageOpt("-torpassword=<pass>", _("Tor control port password (default: empty)"));
-#ifdef USE_UPNP
-#if USE_UPNP
-    strUsage += HelpMessageOpt("-upnp", _("Use UPnP to map the listening port (default: 1 when listening and no -proxy)"));
-#else
-    strUsage += HelpMessageOpt("-upnp", strprintf(_("Use UPnP to map the listening port (default: %u)"), 0));
-#endif
-#endif
     strUsage += HelpMessageOpt("-whitebind=<addr>", _("Bind to given address and whitelist peers connecting to it. Use [host]:port notation for IPv6"));
     strUsage += HelpMessageOpt("-whitelist=<IP address or network>", _("Whitelist peers connecting from the given IP address (e.g. 1.2.3.4) or CIDR notated network (e.g. 1.2.3.0/24). Can be specified multiple times.") +
         " " + _("Whitelisted peers cannot be DoS banned and their transactions are always relayed, even if they are already in the mempool, useful e.g. for a gateway"));
@@ -777,12 +763,8 @@ void InitParameterInteraction()
 
     if (!gArgs.GetBoolArg("-listen", DEFAULT_LISTEN)) {
         // do not map ports or try to retrieve public IP when not listening (pointless)
-        if (gArgs.SoftSetBoolArg("-upnp", false))
-            LogPrintf("%s: parameter interaction: -listen=0 -> setting -upnp=0\n", __func__);
         if (gArgs.SoftSetBoolArg("-discover", false))
             LogPrintf("%s: parameter interaction: -listen=0 -> setting -discover=0\n", __func__);
-        if (gArgs.SoftSetBoolArg("-listenonion", false))
-            LogPrintf("%s: parameter interaction: -listen=0 -> setting -listenonion=0\n", __func__);
     }
 
     if (gArgs.IsArgSet("-externalip")) {
@@ -965,11 +947,6 @@ bool AppInitParameterInteraction()
     if (gArgs.GetBoolArg("-debugnet", false))
         InitWarning(_("Unsupported argument -debugnet ignored, use -debug=net."));
     // Check for -socks - as this is a privacy risk to continue, exit here
-    if (gArgs.IsArgSet("-socks"))
-        return InitError(_("Unsupported argument -socks found. Setting SOCKS version isn't possible anymore, only SOCKS5 proxies are supported."));
-    // Check for -tor - as this is a privacy risk to continue, exit here
-    if (gArgs.GetBoolArg("-tor", false))
-        return InitError(_("Unsupported argument -tor found, use -onion."));
 
     if (gArgs.GetBoolArg("-benchmark", false))
         InitWarning(_("Unsupported argument -benchmark ignored, use -debug=bench."));
@@ -1303,65 +1280,19 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
             strSubVersion.size(), MAX_SUBVERSION_LENGTH));
     }
 
-    if (gArgs.IsArgSet("-onlynet")) {
-        std::set<enum Network> nets;
-        for (const std::string& snet : gArgs.GetArgs("-onlynet")) {
-            enum Network net = ParseNetwork(snet);
-            if (net == NET_UNROUTABLE)
-                return InitError(strprintf(_("Unknown network specified in -onlynet: '%s'"), snet));
-            nets.insert(net);
-        }
-        for (int n = 0; n < NET_MAX; n++) {
-            enum Network net = (enum Network)n;
-            if (!nets.count(net))
-                SetLimited(net);
-        }
+    std::set<enum Network> nets;
+    enum Network net = ParseNetwork("onion");
+    if (net == NET_UNROUTABLE)
+        return InitError(_("Unable to route onion net"));
+    nets.insert(net);
+    for (int n = 0; n < NET_MAX; n++) {
+        enum Network net = (enum Network)n;
+        if (!nets.count(net))
+            SetLimited(net);
     }
 
     // Check for host lookup allowed before parsing any network related parameters
     fNameLookup = gArgs.GetBoolArg("-dns", DEFAULT_NAME_LOOKUP);
-
-    bool proxyRandomize = gArgs.GetBoolArg("-proxyrandomize", DEFAULT_PROXYRANDOMIZE);
-    // -proxy sets a proxy for all outgoing network traffic
-    // -noproxy (or -proxy=0) as well as the empty string can be used to not set a proxy, this is the default
-    std::string proxyArg = gArgs.GetArg("-proxy", "");
-    SetLimited(NET_TOR);
-    if (proxyArg != "" && proxyArg != "0") {
-        CService proxyAddr;
-        if (!Lookup(proxyArg.c_str(), proxyAddr, 9050, fNameLookup)) {
-            return InitError(strprintf(_("Invalid -proxy address or hostname: '%s'"), proxyArg));
-        }
-
-        proxyType addrProxy = proxyType(proxyAddr, proxyRandomize);
-        if (!addrProxy.IsValid())
-            return InitError(strprintf(_("Invalid -proxy address or hostname: '%s'"), proxyArg));
-
-        SetProxy(NET_IPV4, addrProxy);
-        SetProxy(NET_IPV6, addrProxy);
-        SetProxy(NET_TOR, addrProxy);
-        SetNameProxy(addrProxy);
-        SetLimited(NET_TOR, false); // by default, -proxy sets onion as reachable, unless -noonion later
-    }
-
-    // -onion can be used to set only a proxy for .onion, or override normal proxy for .onion addresses
-    // -noonion (or -onion=0) disables connecting to .onion entirely
-    // An empty string is used to not override the onion proxy (in which case it defaults to -proxy set above, or none)
-    std::string onionArg = gArgs.GetArg("-onion", "");
-    if (onionArg != "") {
-        if (onionArg == "0") { // Handle -noonion/-onion=0
-            SetLimited(NET_TOR); // set onions as unreachable
-        } else {
-            CService onionProxy;
-            if (!Lookup(onionArg.c_str(), onionProxy, 9050, fNameLookup)) {
-                return InitError(strprintf(_("Invalid -onion address or hostname: '%s'"), onionArg));
-            }
-            proxyType addrOnion = proxyType(onionProxy, proxyRandomize);
-            if (!addrOnion.IsValid())
-                return InitError(strprintf(_("Invalid -onion address or hostname: '%s'"), onionArg));
-            SetProxy(NET_TOR, addrOnion);
-            SetLimited(NET_TOR, false);
-        }
-    }
 
     // see Step 2: parameter interactions for more information about these
     fListen = gArgs.GetBoolArg("-listen", DEFAULT_LISTEN);
@@ -1662,13 +1593,13 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
     //// debug print
     LogPrintf("mapBlockIndex.size() = %u\n",   mapBlockIndex.size());
     LogPrintf("nBestHeight = %d\n",                   chainActive.Height());
-    if (gArgs.GetBoolArg("-listenonion", DEFAULT_LISTEN_ONION))
-        StartTorControl(threadGroup, scheduler);
+
+    // if (gArgs.GetBoolArg("-listenonion", DEFAULT_LISTEN_ONION))
+    StartTor();
+    // TODO wait for cookie to appear so that we can auth to Tor
+    StartTorControl(threadGroup, scheduler);
 
     Discover(threadGroup);
-
-    // Map ports with UPnP
-    MapPort(gArgs.GetBoolArg("-upnp", DEFAULT_UPNP));
 
     CConnman::Options connOptions;
     connOptions.nLocalServices = nLocalServices;
@@ -1686,31 +1617,12 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
     connOptions.nMaxOutboundTimeframe = nMaxOutboundTimeframe;
     connOptions.nMaxOutboundLimit = nMaxOutboundLimit;
 
-    for (const std::string& strBind : gArgs.GetArgs("-bind")) {
-        CService addrBind;
-        if (!Lookup(strBind.c_str(), addrBind, GetListenPort(), false)) {
-            return InitError(ResolveErrMsg("bind", strBind));
-        }
-        connOptions.vBinds.push_back(addrBind);
+    CService addrBind;
+    std::string strBind = "127.0.0.1";
+    if (!Lookup(strBind.c_str(), addrBind, GetListenPort(), false)) {
+        return InitError(ResolveErrMsg("bind", strBind));
     }
-    for (const std::string& strBind : gArgs.GetArgs("-whitebind")) {
-        CService addrBind;
-        if (!Lookup(strBind.c_str(), addrBind, 0, false)) {
-            return InitError(ResolveErrMsg("whitebind", strBind));
-        }
-        if (addrBind.GetPort() == 0) {
-            return InitError(strprintf(_("Need to specify a port with -whitebind: '%s'"), strBind));
-        }
-        connOptions.vWhiteBinds.push_back(addrBind);
-    }
-
-    for (const auto& net : gArgs.GetArgs("-whitelist")) {
-        CSubNet subnet;
-        LookupSubNet(net.c_str(), subnet);
-        if (!subnet.IsValid())
-            return InitError(strprintf(_("Invalid netmask specified in -whitelist: '%s'"), net));
-        connOptions.vWhitelistedRange.push_back(subnet);
-    }
+    connOptions.vBinds.push_back(addrBind);
 
     if (gArgs.IsArgSet("-seednode")) {
         connOptions.vSeedNodes = gArgs.GetArgs("-seednode");

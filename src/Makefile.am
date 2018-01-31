@@ -392,6 +392,12 @@ bitcoind_LDADD = \
 
 bitcoind_LDADD += $(BOOST_LIBS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS) $(ZMQ_LIBS)
 
+bitcoind_LDADD += ../tor/src/or/libtor.a ../tor/src/common/libor.a ../tor/src/common/libor-ctime.a ../tor/src/common/libor-crypto.a \
+		  ../tor/src/common/libor-event.a ../tor/src/trunnel/libor-trunnel.a ../tor/src/common/libcurve25519_donna.a \
+		  ../tor/src/ext/ed25519/donna/libed25519_donna.a ../tor/src/ext/ed25519/ref10/libed25519_ref10.a \
+		  ../tor/src/ext/keccak-tiny/libkeccak-tiny.a \
+		  $(ZLIB_LIBS) $(ZSTD_LIBS) $(LZMA_LIBS)
+
 # bitcoin-cli binary #
 bitcoin_cli_SOURCES = bitcoin-cli.cpp
 bitcoin_cli_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(EVENT_CFLAGS)
